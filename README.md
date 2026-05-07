@@ -8,7 +8,7 @@ sdk_version: "4.44.0"
 app_file: app.py
 pinned: false
 license: mit
-short_description: Interactive demo of Jana Tumova's minimum-violation LTL planning algorithm (ACC 2013)
+short_description: Interactive minimum-violation LTL planner (ACC 2013)
 ---
 
 # Minimum-Violation LTL Planning
