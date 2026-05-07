@@ -61,8 +61,16 @@ def run_planning(scenario, r0, r1, r2, r3, animate):
 
     if animate and result.success:
         gif = render_animation(grid, result, fps=3)
-        return static, gif, html
-    return static, None, html
+        # Embed as base64 so Gradio 5.x HTML component plays it natively
+        import base64
+        with open(gif, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        gif_html = (
+            f"<img src='data:image/gif;base64,{b64}' "
+            f"style='max-width:100%;border-radius:8px'/>"
+        )
+        return static, gif_html, html
+    return static, "", html
 
 
 def update_scenario_ui(scenario):
@@ -133,7 +141,7 @@ the **highest-priority** rules and minimally violates the rest.
 
         with gr.Column(scale=2):
             grid_img  = gr.Image(label="Planned Path", type="pil", height=420)
-            anim_img  = gr.Image(label="Animation (GIF)", type="filepath", height=420)
+            anim_img  = gr.HTML(label="Animation (GIF)")
             result_md = gr.HTML(label="Spec Satisfaction")
 
     scenario_dd.change(
