@@ -8,13 +8,11 @@ Change spec priorities → watch the plan change to satisfy the highest-priority
 
 import gradio as gr
 
-from src.grid_world import make_scenario, GridWorld, CELL_PROPS
-from src.automata import parse_spec, BuchiAut
+from src.grid_world import make_scenario
+from src.automata import parse_spec
 from src.planner import plan
 from src.visualize import render_static, render_animation, spec_table_html
 
-
-# ── Preset spec bundles per scenario ─────────────────────────────────────────
 
 SCENARIO_SPECS = {
     "road": [
@@ -37,9 +35,9 @@ SCENARIO_SPECS = {
 }
 
 SCENARIO_DESCRIPTIONS = {
-    "road": "🚗 Road network — robot must navigate around a danger zone to reach pickup/dropoff areas and a destination.",
-    "patrol": "🏭 Warehouse patrol — robot periodically covers two inspection zones while avoiding a hazardous area.",
-    "rescue": "🚁 Rescue mission — robot must reach two survivor sites and periodically return to base, avoiding hazards.",
+    "road":   "🚗 Road network — navigate around a danger zone to reach pickup/dropoff areas and a destination.",
+    "patrol": "🏭 Warehouse patrol — periodically cover two inspection zones while avoiding a hazardous area.",
+    "rescue": "🚁 Rescue mission — reach two survivor sites and periodically return to base, avoiding hazards.",
 }
 
 
@@ -49,45 +47,47 @@ def run_planning(scenario, r0, r1, r2, r3, animate):
     n_specs = len(specs_raw)
     rewards_input = [r0, r1, r2, r3][:n_specs]
 
-    automata = []
-    rewards  = []
+    automata, rewards = [], []
     for i, (formula, _, _) in enumerate(specs_raw):
         try:
-            aut = parse_spec(formula, label=formula)
-            automata.append(aut)
+            automata.append(parse_spec(formula, label=formula))
             rewards.append(float(rewards_input[i]))
         except ValueError as e:
             return None, None, f"<p style='color:red'>Error: {e}</p>"
 
-    result = plan(grid, automata, rewards)
-    table_html = spec_table_html(result)
-
-    static_img = render_static(grid, result)
+    result   = plan(grid, automata, rewards)
+    html     = spec_table_html(result)
+    static   = render_static(grid, result)
 
     if animate and result.success:
-        gif_path = render_animation(grid, result, fps=3)
-        return static_img, gif_path, table_html
-    else:
-        return static_img, None, table_html
+        gif = render_animation(grid, result, fps=3)
+        return static, gif, html
+    return static, None, html
 
 
 def update_scenario_ui(scenario):
     specs = SCENARIO_SPECS[scenario]
     desc  = SCENARIO_DESCRIPTIONS[scenario]
-    n = len(specs)
+    n     = len(specs)
 
-    updates = []
+    slider_updates = []
     for i in range(4):
         if i < n:
-            _, label, default_r = specs[i]
-            updates.append(gr.update(label=label, value=default_r, visible=True))
+            _, label, val = specs[i]
+            slider_updates.append(gr.Slider(label=label, value=val, visible=True))
         else:
-            updates.append(gr.update(visible=False))
+            slider_updates.append(gr.Slider(visible=False))
 
-    return [gr.update(value=f"**{desc}**")] + updates
+    return [gr.Markdown(value=f"**{desc}**")] + slider_updates
 
 
-# ── Build the Gradio UI ───────────────────────────────────────────────────────
+def load_defaults():
+    ui   = update_scenario_ui("road")
+    plan_out = run_planning("road", 80, 50, 30, 10, False)
+    return ui + list(plan_out)
+
+
+# ── UI ────────────────────────────────────────────────────────────────────────
 
 with gr.Blocks(title="Minimum-Violation LTL Planner", theme=gr.themes.Soft()) as demo:
 
@@ -113,16 +113,9 @@ the **highest-priority** rules and minimally violates the rest.
             gr.Markdown("### Spec Priorities (higher reward = harder to violate)")
 
             sliders = []
-            default_specs = SCENARIO_SPECS["road"]
-            for i in range(4):
-                visible = i < len(default_specs)
-                _, lbl, val = default_specs[i] if visible else ("", f"Spec {i+1}", 10)
-                s = gr.Slider(
-                    minimum=0, maximum=200, step=5,
-                    value=val, label=lbl,
-                    visible=visible,
-                )
-                sliders.append(s)
+            for i, (_, lbl, val) in enumerate(SCENARIO_SPECS["road"]):
+                sliders.append(gr.Slider(minimum=0, maximum=200, step=5,
+                                         value=val, label=lbl, visible=True))
 
             animate_cb = gr.Checkbox(label="Generate animation (GIF)", value=True)
             plan_btn   = gr.Button("▶  Synthesize Plan", variant="primary")
@@ -133,7 +126,7 @@ the **highest-priority** rules and minimally violates the rest.
 1. Each spec φᵢ becomes a Büchi automaton
 2. Product automaton = grid × aut₁ × aut₂ × ...
 3. SCCs with accepting states for each spec are found
-4. Max-reward SCC is chosen → lasso path reconstructed
+4. Max-reward SCC → lasso path reconstructed
 
 🔵 Prefix path &nbsp;&nbsp; 🔴 Repeating cycle &nbsp;&nbsp; 🟣 Start &nbsp;&nbsp; 🟠 Robot
 """)
@@ -142,8 +135,6 @@ the **highest-priority** rules and minimally violates the rest.
             grid_img  = gr.Image(label="Planned Path", type="pil", height=420)
             anim_img  = gr.Image(label="Animation (GIF)", type="filepath", height=420)
             result_md = gr.HTML(label="Spec Satisfaction")
-
-    # ── Event handlers ────────────────────────────────────────────────────────
 
     scenario_dd.change(
         fn=update_scenario_ui,
@@ -157,15 +148,9 @@ the **highest-priority** rules and minimally violates the rest.
         outputs=[grid_img, anim_img, result_md],
     )
 
-    # Run on load with default scenario
     demo.load(
-        fn=lambda: update_scenario_ui("road"),
-        outputs=[scenario_desc] + sliders,
-    )
-
-    demo.load(
-        fn=lambda: run_planning("road", 80, 50, 30, 10, False),
-        outputs=[grid_img, anim_img, result_md],
+        fn=load_defaults,
+        outputs=[scenario_desc] + sliders + [grid_img, anim_img, result_md],
     )
 
 
